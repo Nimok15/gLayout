@@ -4,7 +4,7 @@
 
 from glayout.pdk.mappedpdk import MappedPDK
 from glayout.pdk.sky130_mapped import sky130_mapped_pdk
-from two_transistor_interdigitized import two_nfet_interdigitized, two_pfet_interdigitized
+from .two_transistor_interdigitized import two_nfet_interdigitized, two_pfet_interdigitized
 from typing import Literal, Optional
 from gdsfactory import Component
 from gdsfactory.component_reference import ComponentReference
