@@ -6,7 +6,15 @@ from typing import Callable, Union, Optional
 from decimal import Decimal
 from pathlib import Path
 import pickle
-from PrettyPrint import PrettyPrintTree
+try:
+    from PrettyPrint import PrettyPrintTree
+except Exception:
+    class PrettyPrintTree:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, *args, **kwargs):
+            pass
 import math
 
 
