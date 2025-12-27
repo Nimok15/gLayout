@@ -16,36 +16,36 @@ from typing import Optional, Union
 import time
 
 def add_cm_labels(cm_in: Component, pdk: MappedPDK) -> Component:
-	
     cm_in.unlock()
-   # list that will contain all port/comp inf0
-    move_info = list()
-    # create labels and append to info list
-    # vss
-    vsslabel = rectangle(layer=pdk.get_glayer("met2_pin"),size=(0.27,0.27),centered=True).copy()
+
+    # list that will contain all port/comp info
+    move_info = []
+
+    # VSS
+    vsslabel = rectangle(layer=pdk.get_glayer("met2_pin"), size=(0.27, 0.27), centered=True).copy()
     vsslabel.add_label(text="VSS",layer=pdk.get_glayer("met2_label"))
     move_info.append((vsslabel, cm_in.ports["ref_multiplier_0_source_E"]))
-    
-    # vref
-    vreflabel = rectangle(layer=pdk.get_glayer("met2_pin"),size=(0.27,0.27),centered=True).copy()
+
+    # VREF
+    vreflabel = rectangle(layer=pdk.get_glayer("met2_pin"), size=(0.27, 0.27), centered=True).copy()
     vreflabel.add_label(text="VREF",layer=pdk.get_glayer("met2_label"))
     move_info.append((vreflabel, cm_in.ports["ref_multiplier_0_drain_N"]))
-    
-    # vcopy
-    vcopylabel = rectangle(layer=pdk.get_glayer("met2_pin"),size=(0.27,0.27),centered=True).copy()
+
+    # VCOPY
+    vcopylabel = rectangle(layer=pdk.get_glayer("met2_pin"),size=(0.27, 0.27),  centered=True).copy()
     vcopylabel.add_label(text="VCOPY",layer=pdk.get_glayer("met2_label"))
     move_info.append((vcopylabel, cm_in.ports["out_multiplier_0_drain_N"]))
-    
-    # VB
-    vb_port = next(p for name, p in cm_in.ports.items() if name.startswith("well"))
-	vblabel = rectangle(layer=pdk.get_glayer("met2_pin"),size=(0.5,0.5),centered=True).copy()
+
+    # VB (well tie)
+    vb_port = next(p for n, p in cm_in.ports.items() if n.startswith("well_"))
+    vblabel = rectangle(layer=pdk.get_glayer("met2_pin"), size=(0.5, 0.5), centered=True).copy()
     vblabel.add_label(text="VB",layer=pdk.get_glayer("met2_label"))
-    move_info.append((vblabel,vb_port))
-    
-    # move everything to position
+    move_info.append((vblabel, vb_port))
+
     for label, port in move_info:
         cm_in.add(align_comp_to_port(label, port, alignment=("c", "b")))
-    return cm_in.flatten() 
+
+    return cm_in.flatten()
 
 def current_mirror_netlist(fetL: Component, fetR: Component) -> Netlist:
 	current_mirror_netlist = Netlist(circuit_name='CMIRROR', nodes=['VREF', 'VOUT', 'VSS', 'B'])
@@ -59,42 +59,55 @@ def current_mirror_netlist(fetL: Component, fetR: Component) -> Netlist:
 	)
 	return current_mirror_netlist
 
-
 @cell
 def current_mirror(
     pdk: MappedPDK, 
     numcols: int = 3,
     device: str = 'nfet',
-    width: float = 3,              
-    fingers: int = 1,              
+    width: float = 3,
+    fingers: int = 1,
     length: Optional[float] = None,
-    rmult: int = 1,   
+    rmult: int = 1,
     dummy: Union[bool, tuple[bool, bool]] = True,
     with_substrate_tap: Optional[bool] = False,
     with_tie: Optional[bool] = True,
-    tie_layers: tuple[str,str]=("met2","met1"),
+    tie_layers: tuple[str, str] = ("met2", "met1"),
     subckt_only: Optional[bool] = True,
     **kwargs
 ) -> Component:
-	 """An instantiable current mirror that returns a Component object. The current mirror is a two transistor interdigitized structure with a shorted source and gate. It can be instantiated with either nmos or pmos devices. It can also be instantiated with a dummy device, a substrate tap, and a tie layer, and is centered at the origin. Transistor A acts as the reference and Transistor B acts as the mirror fet
+    """
+    An instantiable current mirror that returns a Component object.
+
+    The current mirror is a two-transistor structure with shorted
+    source and gate. It can be instantiated with either NMOS or PMOS
+    devices. Optional dummy devices, substrate tap, and tie ring
+    are supported. The layout is centered at the origin.
+
+    Transistor A acts as the reference device,
+    Transistor B acts as the mirror device.
 
     Args:
-        pdk (MappedPDK): the process design kit to use
-        numcols (int): number of columns of the interdigitized fets
-        device (str): nfet or pfet (can only interdigitize one at a time with this option)
-        with_dummy (bool): True places dummies on either side of the interdigitized fets
-        with_substrate_tap (bool): boolean to decide whether to place a substrate tapring
-        with_tie (bool): boolean to decide whether to place a tapring for tielayer
-        tie_layers (tuple[str,str], optional): the layers to use for the tie. Defaults to ("met2","met1").
-        **kwargs: The keyword arguments are passed to the two_nfet_interdigitized or two_pfet_interdigitized functions and need to be valid arguments that can be accepted by the multiplier function
+        pdk (MappedPDK): Process design kit
+        numcols (int): Number of columns
+        device (str): 'nfet' or 'pfet'
+        width (float): Device width
+        fingers (int): Number of fingers
+        length (float): Channel length
+        rmult (int): Multiplier
+        dummy (bool | tuple): Dummy devices
+        with_substrate_tap (bool): Add substrate tap
+        with_tie (bool): Add well tie
+        tie_layers (tuple): Tie metal layers
+        subckt_only (bool): Netlist control
+        **kwargs: Passed to device generator
 
     Returns:
-        Component: a current mirror component object
+        Component: Current mirror layout
     """
     pdk.activate()
     cmirror = Component("current_mirror")
 
-# Handle dummy specification
+    # Handle dummy specification
     if isinstance(dummy, bool):
         dummy = (dummy, dummy)
     well = None
@@ -120,7 +133,7 @@ def current_mirror(
     min_spacing_y = metal_space + 2 * gate_route_os 
     min_spacing_y -= 2 * abs(fetL.ports["well_S"].center[1] - fetL.ports["multiplier_0_gate_S"].center[1])
     ref_top = (cmirror << fetL).movey(fetL.ymax + min_spacing_y / 2).movex(-fetL.xmax)
-   # Output device (bottom, mirrored)
+    # Output device (bottom, mirrored)
     out_bot = (cmirror << fetR)
     out_bot.mirror_y()
     out_bot.movey(-fetR.ymax - min_spacing_y / 2).movex(-fetR.xmax)
@@ -132,7 +145,7 @@ def current_mirror(
 
         for inst in [ref_top, out_bot]:
             try:
-                cmirror << straight_route(pdk, inst.ports["multiplier_0_dummy_L_gsdcon_top_met_W"], cmirror.ports["tap_W_top_met_W"], glayer2="met1")
+                cmirror << straight_route(pdk, inst.ports["multiplier_0_dummy_L_gsdcon_top_met_W"], cmirror.ports["tap_W_top_met_W"],glayer2="met1")
             except KeyError:
                 pass
     source_bar = cmirror << c_route(pdk, ref_top.ports["multiplier_0_source_E"], out_bot.ports["multiplier_0_source_E"], viaoffset=False)
@@ -154,6 +167,7 @@ def current_mirror(
     cmirror.info['netlist'] = current_mirror_netlist(fetL, fetR)
     return cmirror
 
+import time
 if __name__ == "__main__":
     comp =current_mirror(sky130)
     # comp.pprint_ports()
