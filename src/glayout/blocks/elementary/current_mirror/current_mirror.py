@@ -1,7 +1,7 @@
 from glayout import MappedPDK, sky130,gf180
 from glayout.routing import c_route,L_route,straight_route
 from glayout.spice.netlist import Netlist
-from glayout.placement.two_transistor_interdigitized import two_nfet_interdigitized, two_pfet_interdigitized
+from glayout.placement.two_transistor_interdigitized import two_nfet_interdigitized, two_pfet_interdigitized, two_tran_interdigitized_netlist
 from glayout.spice.netlist import Netlist
 from glayout.primitives.fet import nmos, pmos
 from glayout.primitives.guardring import tapring
@@ -12,6 +12,7 @@ from glayout.util.comp_utils import evaluate_bbox, prec_center, prec_ref_center,
 from typing import Optional, Union 
 from glayout.primitives.via_gen import via_stack
 from gdsfactory.components import text_freetype, rectangle
+
 
 try:
     from evaluator_wrapper import run_evaluation
@@ -58,43 +59,43 @@ def sky130_add_cm_labels(cm_in: Component) -> Component:
         cm_in.add(compref)
     return cm_in.flatten() 
 
-def current_mirror_netlist(
-    pdk: MappedPDK, 
+def current_mirror_interdigitized_netlist(
+    pdk: MappedPDK,
     width: float,
     length: float,
-    multipliers: int, 
-    with_dummy: Optional[bool] = False,
-    n_or_p_fet: Optional[str] = 'nfet',
-    subckt_only: Optional[bool] = False
+    fingers: int,
+    multipliers: int,
+    with_dummy: bool,
+    device: str,
 ) -> Netlist:
-    if length is None:
-        length = pdk.get_grule('poly')['min_width']
-    if width is None:
-        width = 3 
-    mtop = multipliers if subckt_only else 1
-    model = pdk.models[n_or_p_fet]
-    
-    source_netlist = """.subckt {circuit_name} {nodes} """ + f'l={length} w={width} m={mtop} ' + """
-XA VREF VREF VSS VB {model} l={{l}} w={{w}} m={{m}}
-XB VCOPY VREF VSS VB {model} l={{l}} w={{w}} m={{m}}"""
-    if with_dummy:
-        source_netlist += "\nXDUMMY VB VB VB VB {model} l={{l}} w={{w}} m={{2}}"
-    source_netlist += "\n.ends {circuit_name}"
+    """
+    Current mirror netlist built from a two-transistor interdigitized primitive
+    """
 
-    instance_format = "X{name} {nodes} {circuit_name} l={length} w={width} m={mult}"
- 
-    return Netlist(
-        circuit_name='CMIRROR',
-        nodes=['VREF', 'VCOPY', 'VSS', 'VB'], 
-        source_netlist=source_netlist,
-        instance_format=instance_format,
-        parameters={
-            'model': model,
-            'width': width,
-            'length': length,   
-            'mult': multipliers
-        }
+    current_mirror_netlist = Netlist(circuit_name="CMIRROR", nodes=["VREF", "VOUT", "VSS", "B"])
+
+    current_mirror_netlist.connect_netlist(
+        two_tran_interdigitized_netlist(
+            pdk=pdk,
+            width=width,
+            length=length,
+            fingers=fingers,
+            multipliers=multipliers,
+            with_dummy=with_dummy,
+            n_or_p_fet=device,
+        ),
+        [
+            ("VDD1", "VREF"),   # reference drain
+            ("VG1",  "VREF"),   # reference gate (diode-connected)
+            ("VDD2", "VOUT"),   # mirror drain
+            ("VG2",  "VREF"),   # mirror gate
+            ("VSS1", "VSS"),    # shared source
+            ("VSS2", "VSS"),
+            ("VB",   "B"),      # bulk
+        ],
     )
+
+    return current_mirror_netlist
 
 
 @cell
@@ -179,7 +180,6 @@ def current_mirror(
             top_level << straight_route(pdk, top_level.ports[port1], top_level.ports["welltie_E_top_met_E"], glayer2="met1")
         except KeyError:
             pass
-    
     # add a pwell 
     if device in ['nmos','nfet']:
         top_level.add_padding(layers = (pdk.get_glayer("pwell"),), default = pdk.get_grule("pwell", "active_tap")["min_enclosure"], )
@@ -200,13 +200,15 @@ def current_mirror(
         top_level.add_ports(subtap_ring.get_ports_list(), prefix="substrate_tap_")
   
     top_level.add_ports(source_short.get_ports_list(), prefix='purposegndports')
-    
-    
-    top_level.info['netlist'] = current_mirror_netlist(
-        pdk, 
-        width=kwargs.get('width', 3), length=kwargs.get('length', 0.15), multipliers=numcols, with_dummy=with_dummy,
-        n_or_p_fet=device,
-        subckt_only=True
+
+    top_level.info["netlist"] = current_mirror_interdigitized_netlist(
+        pdk=pdk,
+        width=kwargs.get("width", 3),
+        length=kwargs.get("length", 0.15),
+        fingers=kwargs.get("fingers", 1),
+        multipliers=numcols,
+        with_dummy=with_dummy,
+        device=device,
     )
  
     return top_level
@@ -278,14 +280,12 @@ def sky130_add_current_mirror_labels(current_mirror_in: Component) -> Component:
         current_mirror_in.add(compref)
     
     return current_mirror_in.flatten()
-
-
-# Create and evaluate a current mirror instance
+#import time
 if __name__ == "__main__":
     # OLD EVAL CODE
     # comp = current_mirror(sky130)
     # # comp.pprint_ports()
-    # comp = add_cm_labels(comp,sky130)
+    # comp = sky130_add_current_mirror_labels(comp)
     # comp.name = "CM"
     # comp.show()
     # #print(comp.info['netlist'].generate_netlist())
