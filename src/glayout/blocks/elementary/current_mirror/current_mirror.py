@@ -280,3 +280,6 @@ def sky130_add_current_mirror_labels(current_mirror_in: Component) -> Component:
         current_mirror_in.add(compref)
     
     return current_mirror_in.flatten()
+# Backward compatibility alias
+current_mirror_netlist = current_mirror_interdigitized_netlist
+
