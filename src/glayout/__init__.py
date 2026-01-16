@@ -70,6 +70,8 @@ from .placement.two_transistor_interdigitized import (
     two_nfet_interdigitized, macro_two_transistor_interdigitized
 )
 from .placement.two_transistor_place import two_transistor_place
+# Blocks (elementary + composite)
+from . import blocks
 
 __version__ = "0.1.1"
 
