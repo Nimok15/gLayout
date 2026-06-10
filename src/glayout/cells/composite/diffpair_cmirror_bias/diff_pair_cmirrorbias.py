@@ -194,6 +194,9 @@ def diff_pair_ibias(
         viaoffset=None,
     )
     cmirror.add_ports(srcshort.get_ports_list(), prefix="purposegndports")
+    _lastcol = diffpair_bias[2] - 1
+    cmirror << straight_route(pdk, cmirror.ports["A_0_dummy_L_gsdcon_top_met_W"], cmirror.ports["welltie_W_top_met_W"], glayer2="met1")
+    cmirror << straight_route(pdk, cmirror.ports[f"B_{_lastcol}_dummy_R_gsdcon_top_met_E"], cmirror.ports["welltie_E_top_met_E"], glayer2="met1")
     # current mirror netlist — gf180 needs `dummies_tied_to_bulk=False`
     # because here we use raw two_nfet_interdigitized + custom routing,
     # NOT current_mirror, so the standalone-cell's straight_route from
@@ -201,9 +204,7 @@ def diff_pair_ibias(
     # cmirror dummies on a per-cell floating net. sky130 magic merges
     # the floating dummies into the bulk so the schematic must keep
     # them tied to VB or magic counts an extra net.
-    ## HACK: Note that this is a hack for magic LVS, and it's likely incorrect
-    ##       we probably want to fix it properly
-    _dummies_tied = (pdk.name.lower() == "sky130")
+    _dummies_tied = True
     cmirror.info['netlist'] = current_mirror_netlist(
         pdk,
         width=diffpair_bias[0],
@@ -296,4 +297,6 @@ def diff_pair_ibias(
     diffpair_i_flat = diffpair_i_.flatten()
     diffpair_i_flat.info['netlist'] = diff_pair_ibias_netlist(center_diffpair_comp, cmirror, antenna_diode_comp)
     return diffpair_i_flat
+
+
 
