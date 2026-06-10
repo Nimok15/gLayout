@@ -356,7 +356,7 @@ def opamp(
         # already match an opamp top-level pin. We purge them all because
         # the opamp's add_opamp_labels below re-emits the right set on
         # the right metal.
-        ["VP", "VN", "VDD1", "VDD2", "IBIAS", "VSS", "B"],
+        ["VP", "VN", "VDD1", "VDD2", "IBIAS", "VSS", "B", "VTAIL"],
     )
     # add LVS pin/label rects so netgen can name-match the top-level signals
     opamp_top = add_opamp_labels(opamp_top, pdk, add_output_stage=add_output_stage)
