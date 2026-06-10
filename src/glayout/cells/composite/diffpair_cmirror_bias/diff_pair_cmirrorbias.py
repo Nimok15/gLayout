@@ -163,7 +163,7 @@ def diff_pair_ibias(
         gate_route_topmet="met3",
         sd_route_topmet="met3",
         rmult=rmult,
-        tie_layers=("met2", "met2"),
+        tie_layers=("met2", "met1"),
     )
     # cmirror routing
     metal_sep = pdk.util_max_metal_seperation()
@@ -195,15 +195,11 @@ def diff_pair_ibias(
     )
     cmirror.add_ports(srcshort.get_ports_list(), prefix="purposegndports")
     _lastcol = diffpair_bias[2] - 1
-    # Ground the outer dummies to the adjacent welltie ring segment.
-    # Port orientations differ between PDKs (L_route's perpendicularity
-    # assert fails on sky130), so route on the ring's metal explicitly:
-    # straight west/east from the dummy gsdcon into the ring's inner edge.
-    for _dumport, _tieport in (
-        ("A_0_dummy_L_gsdcon_top_met_W", "welltie_W_top_met_E"),
-        (f"B_{_lastcol}_dummy_R_gsdcon_top_met_E", "welltie_E_top_met_W"),
-    ):
-        cmirror << straight_route(pdk, cmirror.ports[_dumport], cmirror.ports[_tieport])
+    # Ground the outer dummies to the welltie — same recipe as the standalone
+    # current_mirror cell (which passes DRC+LVS on both PDKs): met1 strap to
+    # the ring's met1 vertical segment.
+    cmirror << straight_route(pdk, cmirror.ports["A_0_dummy_L_gsdcon_top_met_W"], cmirror.ports["welltie_W_top_met_W"], glayer2="met1")
+    cmirror << straight_route(pdk, cmirror.ports[f"B_{_lastcol}_dummy_R_gsdcon_top_met_E"], cmirror.ports["welltie_E_top_met_E"], glayer2="met1")
     # current mirror netlist — gf180 needs `dummies_tied_to_bulk=False`
     # because here we use raw two_nfet_interdigitized + custom routing,
     # NOT current_mirror, so the standalone-cell's straight_route from
