@@ -268,21 +268,20 @@ def opamp_twostage(
         # as literals — see DIFF_TO_SINGLE's netlist for the same pattern.
         source_netlist=(
             ".subckt {circuit_name} {nodes} "
-            + f"l={_csb_l} w={_csb_w} mr={_csb_f} mo={_csb_f * _csb_m} "
-            + f"dr={2} do={2 * _csb_m}\n"
+            + f"l={_csb_l} w={_csb_w} mr={_csb_f} mo={_csb_f * _csb_m}\n"
             + "XREFL VREF VREF VSS B {model} l={{l}} w={{w}} m={{mr}}\n"
             + "XREFR VREF VREF VSS B {model} l={{l}} w={{w}} m={{mr}}\n"
             + "XOUTL VOUT VREF VSS B {model} l={{l}} w={{w}} m={{mo}}\n"
             + "XOUTR VOUT VREF VSS B {model} l={{l}} w={{w}} m={{mo}}\n"
-            + "XDREFL B B B B {model} l={{l}} w={{w}} m={{dr}}\n"
-            + "XDREFR B B B B {model} l={{l}} w={{w}} m={{dr}}\n"
-            + "XDOUTL B B B B {model} l={{l}} w={{w}} m={{do}}\n"
-            + "XDOUTR B B B B {model} l={{l}} w={{w}} m={{do}}\n"
+            + "".join(
+                f"XDUM{_i+1} B B B B {{model}} l={_csb_l} w={_csb_w}\n"
+                for _i in range(2 * (2 + 2 * _csb_m))
+              )
             + ".ends {circuit_name}"
         ),
         instance_format=(
             "X{name} {nodes} {circuit_name} l={length} w={width} "
-            "mr={mr} mo={mo} dr={dr} do={do}"
+            "mr={mr} mo={mo}"
         ),
         parameters={
             'model': _nfet_model,
@@ -290,8 +289,6 @@ def opamp_twostage(
             'length': _csb_l,
             'mr': _csb_f,
             'mo': _csb_f * _csb_m,
-            'dr': 2,
-            'do': 2 * _csb_m,
         }
     )
 
