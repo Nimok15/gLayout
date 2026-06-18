@@ -80,6 +80,7 @@ def diff_pair_ibias(
     diffpair_bias: tuple[float, float, int],
     rmult: int = 1,
     with_antenna_diode_on_diffinputs: int = 0,
+    dummies_tied_to_bulk: Optional[bool] = None,
 ) -> Component:
     # create and center diffpair
     diffpair_i_ = Component("temp diffpair and current source")
@@ -203,7 +204,10 @@ def diff_pair_ibias(
     # them tied to VB or magic counts an extra net.
     ## HACK: Note that this is a hack for magic LVS, and it's likely incorrect
     ##       we probably want to fix it properly
-    _dummies_tied = (pdk.name.lower() == "sky130")
+    if dummies_tied_to_bulk is None:
+        _dummies_tied = (pdk.name.lower() == "sky130")
+    else:
+        _dummies_tied = dummies_tied_to_bulk
     cmirror.info['netlist'] = current_mirror_netlist(
         pdk,
         width=diffpair_bias[0],
