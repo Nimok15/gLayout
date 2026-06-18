@@ -22,7 +22,7 @@ from glayout.cells.composite.opamp.row_csamplifier_diff_to_single_ended_converte
 
 
 @validate_arguments
-def __add_diff_pair_and_bias(pdk: MappedPDK, toplevel_stacked: Component, half_diffpair_params: tuple[float, float, int], diffpair_bias: tuple[float, float, int], rmult: int, with_antenna_diode_on_diffinputs: int) -> Component:
+def __add_diff_pair_and_bias(pdk: MappedPDK, toplevel_stacked: Component, half_diffpair_params: tuple[float, float, int], diffpair_bias: tuple[float, float, int], rmult: int, with_antenna_diode_on_diffinputs: int, dummies_tied_to_bulk: Optional[bool] = None) -> Component:
     clear_cache()
     diffpair_i_ref = diff_pair_ibias(pdk, half_diffpair_params, diffpair_bias, rmult, with_antenna_diode_on_diffinputs, dummies_tied_to_bulk=dummies_tied_to_bulk)
     toplevel_stacked.add(diffpair_i_ref)
