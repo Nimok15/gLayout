@@ -150,7 +150,16 @@ def __route_sharedgatecomps(pdk: MappedPDK, shared_gate_comps, via_location, pto
     # default-width (port-width) rails 0.1um apart, tripping M3.2a. sky130
     # has wider pitch, so leave its rails at default to avoid via-enclosure
     # gaps that show up as m1.2 when the rail is too thin.
-    _drain_w = 0.5 if pdk.name.lower() == "gf180" else None
+    # via2 is 0.26 wide and needs 0.12 enclosure per side, so 0.50um is the
+    # exact minimum for a landing pad. A rail sitting at the limit can lose
+    # enclosure on one side after grid snapping — the via still draws, the
+    # metal no longer covers it, and extraction floats the net (LVS then
+    # reports the drain node as layout-only). Derive the width with a grid
+    # step of margin instead of hard-coding the minimum.
+    _via_w = pdk.get_grule("via2")["width"]
+    _encl = pdk.get_grule("via2", "met3")["min_enclosure"]
+    _drain_w = pdk.snap_to_2xgrid(_via_w + 2 * _encl + pdk.grid_size) \
+        if pdk.name.lower() == "gf180" else None
     shared_gate_comps << c_route(pdk, ptop_AB.ports["R_drain_E"], pmos_bdrain_diffpair_v.ports["bottom_met_E"],extension=pcomps_route_B_drain_extension +_max_metal_seperation_ps, width1=_drain_w, width2=_drain_w)
     shared_gate_comps << c_route(pdk, pbottom_AB.ports["L_drain_W"], pmos_bdrain_diffpair_v.ports["bottom_met_W"],extension=pcomps_route_B_drain_extension +_max_metal_seperation_ps, width1=_drain_w, width2=_drain_w)
     shared_gate_comps.add_ports(pmos_bdrain_diffpair_v.get_ports_list(),prefix="minusvia_")
