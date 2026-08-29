@@ -1,0 +1,35 @@
+{
+  "current_mirror_nfet": {
+    "iout_op":    {},
+    "mirror_err": {}
+  },
+  "current_mirror_pfet": {
+    "iout_op":    {},
+    "mirror_err": {}
+  },
+  "diff_pair": {
+    "i1_bal":    {},
+    "i2_bal":    {},
+    "itail_rec": {},
+    "imbalance": {}
+  },
+  "diff_pair_ibias": {
+    "i1_bal":    {},
+    "i2_bal":    {},
+    "itail_rec": {},
+    "imbalance": {}
+  },
+  "flipped_voltage_follower": {
+    "follow_slope": {},
+    "level_shift":  {}
+  },
+  "transmission_gate": {
+    "ron_lo":  {},
+    "ron_mid": {},
+    "ron_hi":  {}
+  },
+  "low_voltage_cmirror": {
+    "err1": {},
+    "err2": {}
+  }
+}
