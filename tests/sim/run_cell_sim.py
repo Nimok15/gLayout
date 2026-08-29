@@ -88,6 +88,26 @@ _DEFAULT_CORNER = {"sky130": "tt", "gf180": "typical"}
 # section (there is no res_fs etc.); skewed passives would need a custom deck.
 _GF180_FIXED_SECTIONS = ("cap_mim", "res_typical", "moscap_typical", "mimcap_typical")
  
+# Per-PDK geometry scale injected into the deck (`.option scale=<value>`).
+# glayout reference netlists carry BARE MICRON w/l values (w=3 l=0.28). The
+# sky130 model libs set `.option scale=1e-6` internally, so those netlists
+# just work; the gf180 libs expect METERS and set no scale, so without this
+# every MOS lands outside its model bins and ngspice dies with "could not
+# find a valid modelname". Override per run with --scale.
+_DEFAULT_SCALE = {"sky130": None, "gf180": "1e-6"}
+ 
+ 
+def _deck_option_lines(pdk_name: str, scale_override: Optional[str] = None) -> List[str]:
+    """Deck-global `.option` lines injected ahead of the model preamble."""
+    scale = _DEFAULT_SCALE[pdk_name] if scale_override is None else scale_override
+    if scale is None or str(scale).lower() in ("none", "off", ""):
+        return []
+    return [
+        "* glayout netlists use micron-unit w/l; map them onto the meter-unit",
+        "* model bins (sky130's lib sets this internally, gf180's does not).",
+        f".option scale={scale}",
+    ]
+ 
  
 def _model_deck_lines(
     pdk_name: str,
@@ -162,6 +182,13 @@ def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, An
         return summary
     if "could not find include file" in text or "can't open file" in text.lower():
         summary["conclusion"] = "missing include / model lib"
+        return summary
+    # Binned-model resolution failure: the model libs loaded, but the device's
+    # W/L matched no bin. With glayout's micron-unit netlists this is almost
+    # always a missing/wrong `.option scale` (see _DEFAULT_SCALE).
+    if "could not find a valid modelname" in text.lower():
+        summary["conclusion"] = ("no model bin for device W/L "
+                                 "(units / .option scale mismatch?)")
         return summary
     # Model card not found / unresolved subckt — almost always a corner-section
     # mismatch or a DUT subckt name that doesn't match the .subckt in the
@@ -367,12 +394,14 @@ def _enumerate_cells(inputs_dir: Path, tb_dir: Path) -> Tuple[List[str], int]:
  
  
 def _assemble_deck(name: str, netlist_path: Path, testbench_path: Path,
-                   model_lines: List[str], corner: str, deck_path: Path) -> None:
-    """Write a self-contained ngspice deck: model setup + DUT netlist + testbench.
+                   prelude_lines: List[str], corner: str, deck_path: Path) -> None:
+    """Write a self-contained ngspice deck: prelude + DUT netlist + testbench.
  
-    ``model_lines`` is the per-PDK model preamble from ``_model_deck_lines()``:
-    a single ``.lib <file> <corner>`` for sky130, or the design.ngspice
-    include plus the sm141064.ngspice section set for gf180.
+    ``prelude_lines`` is the per-PDK deck prelude: the `.option` lines from
+    ``_deck_option_lines()`` (e.g. the gf180 micron scale) followed by the
+    model preamble from ``_model_deck_lines()`` — a single ``.lib <file>
+    <corner>`` for sky130, or the design.ngspice include plus the
+    sm141064.ngspice section set for gf180.
  
     POST-LAYOUT (PEX) EXTENSION: to simulate parasitics instead of the
     reference netlist, extract a `<cell>.pex.spice` from gds/<cell>.gds via a
@@ -386,7 +415,7 @@ def _assemble_deck(name: str, netlist_path: Path, testbench_path: Path,
     body = re.sub(r"^\s*\.end\s*$", "", body, flags=re.M | re.I).rstrip()
     deck = (
         f"* auto-assembled deck for {name} ({corner})\n"
-        + "\n".join(model_lines) + "\n"
+        + "\n".join(prelude_lines) + "\n"
         + f'.include "{netlist_path}"\n'
         + f"{body}\n"
         + ".end\n"
@@ -420,7 +449,7 @@ def _run_one_sim(item: dict) -> dict:
             name,
             Path(item["netlist_path"]),
             Path(item["testbench_path"]),
-            item["model_lines"],
+            item["prelude_lines"],
             item["corner"],
             deck_path,
         )
@@ -493,6 +522,12 @@ def main() -> int:
              "<cell>.checks.json sidecar is used as a fallback for any cell "
              "not listed in this file.")
     parser.add_argument(
+        "--scale", default=None,
+        help="Override the injected `.option scale` (default: gf180=1e-6, "
+             "sky130=none since its lib sets the scale itself). Pass 'none' "
+             "to disable.",
+    )
+    parser.add_argument(
         "--corner", default=None,
         help="Override corner section (default: sky130=tt, gf180=typical). For "
              "gf180 this swaps only the sm141064 MOS section; passive sections "
@@ -548,7 +583,8 @@ def main() -> int:
     if not model_path.exists():
         print(f"warning: model library not found at {model_path} "
               f"(PDK_ROOT={os.environ.get('PDK_ROOT', '/foss/pdks')})", file=sys.stderr)
-    print(f"model setup (corner {corner}):\n  " + "\n  ".join(model_lines))
+    prelude_lines = _deck_option_lines(args.pdk, args.scale) + model_lines
+    print(f"deck prelude (corner {corner}):\n  " + "\n  ".join(prelude_lines))
  
     # Load the single consolidated checks file once: { "<cell>": {band...} }.
     checks_file = Path(args.checks_file) if args.checks_file else (tb_dir / "checks.json")
@@ -582,7 +618,7 @@ def main() -> int:
             "netlist_path": str(inputs_dir / "netlists" / f"{name}.spice"),
             "testbench_path": str(tb_dir / f"{name}.spice"),
             "checks": all_checks.get(name),
-            "model_lines": model_lines,
+            "prelude_lines": prelude_lines,
             "corner": corner,
             "out_dir": str(out_dir),
             "rpt_dir": str(rpt_dir),
@@ -623,3 +659,4 @@ def main() -> int:
  
 if __name__ == "__main__":
     sys.exit(main())
+ 
