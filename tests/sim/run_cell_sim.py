@@ -1,40 +1,59 @@
 """Runs ngspice on every cell using the reference netlist emitted by
 ``tests/drc/run_cell_drc.py`` plus a per-cell testbench.
-
+ 
 The sim CI workflow pulls the DRC artifact (``drc_results/<pdk>/``), which
 contains:
-
+ 
   drc_results/<pdk>/
     gds/<cell>.gds
     netlists/<cell>.spice          <-- DUT subckt, written by run_cell_drc.py
     reports/<cell>.lyrdb
     summary.json
-
+ 
 A cell is simulated when it has BOTH that reference netlist AND a testbench at:
-
-  tests/sim/testbenches/<cell>.spice
-
+ 
+  tests/sim/testbenches/<pdk>/<cell>.spice
+ 
+Testbenches are per-PDK because rails, probe points, stimulus levels and pass
+bands all differ between sky130's 1.8 V and gf180's 3.3 V devices. If the
+per-PDK directory does not exist, the runner falls back to the flat
+``tests/sim/testbenches/`` layout for backward compatibility.
+ 
 The testbench is the stimulus + analysis + `.measure` cards only. It must NOT
-declare the model `.lib` or `.include` the DUT netlist — this runner injects
-both so the same testbench works across corners/PDKs. Instantiate the DUT with
-a subckt call whose name matches the `.subckt <cell>` in the reference netlist,
-e.g.:
-
+declare the model `.lib`/`.include` lines or `.include` the DUT netlist — this
+runner injects both so the same testbench works across corners. Instantiate
+the DUT with a subckt call whose name matches the `.subckt <cell>` in the
+reference netlist, e.g.:
+ 
     Vdd vdd 0 1.8
     Vin in 0 PULSE(0 1.8 1n 10p 10p 5n 10n)
     X1 in out vdd 0 <cell>
     .tran 10p 50n
     .measure tran tphl TRIG v(in) VAL=0.9 RISE=1 TARG v(out) VAL=0.9 FALL=1
-
-Optionally, a sidecar ``tests/sim/testbenches/<cell>.checks.json`` gives pass
+ 
+Optionally, a sidecar ``.../testbenches/<pdk>/<cell>.checks.json`` gives pass
 bands for measurements; without it a cell passes when ngspice finishes with no
 fatal error and no failed `.measure`:
-
+ 
     { "tphl": {"max": 2e-9}, "tplh": {"max": 2e-9} }
-
+ 
 This mirrors the LVS runner's shape so the same workflow plumbing (artifact
 upload, JUnit publication) works unchanged.
-
+ 
+MODEL HANDLING IS PER-PDK (see ``_model_deck_lines``). sky130 is a single
+``.lib sky130.lib.spice <corner>``. gf180 is NOT: ``typical`` is not a
+section of ``design.ngspice``, and the device models live in
+``sm141064.ngspice`` split across several sections, so the deck needs
+ 
+    .include design.ngspice
+    .lib sm141064.ngspice typical          (MOS corner section)
+    .lib sm141064.ngspice cap_mim
+    .lib sm141064.ngspice res_typical
+    .lib sm141064.ngspice moscap_typical
+    .lib sm141064.ngspice mimcap_typical
+ 
+which is what this runner assembles for --pdk gf180.
+ 
 By default this simulates the *reference* netlist (pre-layout / functional
 check). Post-layout (PEX) sim is a documented extension point in
 ``_assemble_deck`` — it's left off the default path because per-cell magic
@@ -42,7 +61,7 @@ extraction in CI is slow and, for gf180, mis-extracts the substrate (same
 reason the LVS runner drives the klayout deck for gf180).
 """
 from __future__ import annotations
-
+ 
 import argparse
 import json
 import os
@@ -53,47 +72,73 @@ import traceback
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
-
+ 
+ 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-# Per-PDK ngspice model library + default corner section. Resolved straight
-# from PDK_ROOT rather than via a glayout pdk attribute, so this doesn't depend
-# on an API the LVS path doesn't already use. Override per run with
-# --model-lib / --corner if your install differs.
+ 
+# Default corner per PDK: names the sky130.lib.spice section for sky130 and
+# the sm141064.ngspice MOS section for gf180. Resolved straight from PDK_ROOT
+# rather than via a glayout pdk attribute, so this doesn't depend on an API
+# the LVS path doesn't already use. Override per run with --model-lib /
+# --corner if your install differs.
 _DEFAULT_CORNER = {"sky130": "tt", "gf180": "typical"}
-
-
-def _model_lib(
+ 
+# gf180 passive-device sections injected alongside the MOS corner section.
+# These stay at their typical variants even when --corner overrides the MOS
+# section (there is no res_fs etc.); skewed passives would need a custom deck.
+_GF180_FIXED_SECTIONS = ("cap_mim", "res_typical", "moscap_typical", "mimcap_typical")
+ 
+ 
+def _model_deck_lines(
     pdk_name: str,
     path_override: Optional[str] = None,
     corner_override: Optional[str] = None,
-) -> Tuple[Path, str]:
+) -> Tuple[List[str], str, Path]:
+    """Per-PDK model preamble for the assembled deck.
+ 
+    Returns ``(deck_lines, corner, primary_model_path)``; the path is only
+    used for logging and an early existence warning.
+ 
+    sky130:  .lib "<...>/sky130.lib.spice" <corner>
+    gf180:   .include "<...>/design.ngspice"            (params/options)
+             .lib "<...>/sm141064.ngspice" <corner>     (MOS devices)
+             .lib "<...>/sm141064.ngspice" cap_mim
+             .lib "<...>/sm141064.ngspice" res_typical
+             .lib "<...>/sm141064.ngspice" moscap_typical
+             .lib "<...>/sm141064.ngspice" mimcap_typical
+ 
+    Paths resolve from PDK_ROOT (gf180 via ciel's ``current`` pointer, the
+    same pattern lvs.yml uses to locate the klayout deck). --model-lib
+    overrides them: for sky130 pass the .lib file itself; for gf180 pass the
+    ngspice models *directory* (the one holding design.ngspice and
+    sm141064.ngspice) — pointing at either file inside it also works.
+    """
     corner = corner_override or _DEFAULT_CORNER[pdk_name]
-    if path_override:
-        return Path(path_override), corner
     root = Path(os.environ.get("PDK_ROOT", "/foss/pdks"))
+ 
     if pdk_name == "sky130":
-        return root / "sky130A/libs.tech/ngspice/sky130.lib.spice", corner
-    # gf180: ciel keeps the active version behind a `current` pointer (same
-    # pattern lvs.yml uses to locate the klayout deck).
-    ver = (root / "ciel/gf180mcu/current").read_text().strip()
-    base = root / "ciel/gf180mcu/versions" / ver / "gf180mcuD/libs.tech/ngspice"
-    cand = base / "design.ngspice"
-    if not cand.exists():
-        libs = (
-            sorted(base.glob("*.ngspice"))
-            + sorted(base.glob("*.lib.spice"))
-            + sorted(base.glob("*.spice"))
-        )
-        if libs:
-            cand = libs[0]
-    return cand, corner
-
-
+        lib = Path(path_override) if path_override else (
+            root / "sky130A/libs.tech/ngspice/sky130.lib.spice")
+        return [f'.lib "{lib}" {corner}'], corner, lib
+ 
+    # gf180: ciel keeps the active version behind a `current` pointer.
+    if path_override:
+        base = Path(path_override)
+        if base.is_file():
+            base = base.parent
+    else:
+        ver = (root / "ciel/gf180mcu/current").read_text().strip()
+        base = root / "ciel/gf180mcu/versions" / ver / "gf180mcuD/libs.tech/ngspice"
+    design = base / "design.ngspice"
+    sm = base / "sm141064.ngspice"
+    lines = [f'.include "{design}"', f'.lib "{sm}" {corner}']
+    lines += [f'.lib "{sm}" {sec}' for sec in _GF180_FIXED_SECTIONS]
+    return lines, corner, sm
+ 
+ 
 def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, Any]:
     """Lightweight parse of an ngspice batch log.
-
+ 
     Surfaces the common environment failures explicitly (mirroring the LVS
     parser) so a broken container reads as e.g. "ngspice not on PATH" rather
     than the catch-all "sim inconclusive". Then extracts `.measure` results and
@@ -111,7 +156,7 @@ def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, An
     }
     if not text:
         return summary
-
+ 
     if "ngspice: command not found" in text or "ngspice: not found" in text:
         summary["conclusion"] = "ngspice binary not on PATH"
         return summary
@@ -124,9 +169,9 @@ def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, An
     if re.search(r"unable to find definition of model|could not find a model|unknown subckt|unknown subcircuit", text, re.I):
         summary["conclusion"] = "missing model / unresolved subckt"
         return summary
-
+ 
     fatal = re.search(r"\bfatal\b|singular matrix|Timestep too small|simulation (?:aborted|interrupted)|iteration limit reached", text, re.I)
-
+ 
     # Capture `name = 1.23e-9` style measurement echoes, and any that failed.
     # ngspice prints `.measure` results under a "Measurements for <...> Analysis"
     # header; its end-of-run resource report (e.g. "Stack = 0 bytes.") also looks
@@ -151,14 +196,14 @@ def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, An
     for m in re.finditer(r"(?:measure(?:ment)?\s+)?([A-Za-z_]\w*)\s*(?:=\s*failed|\bfailed\b)", text, re.I):
         if m.group(1).lower() not in ("the", "measurement"):
             summary["failed_measures"].append(m.group(1))
-
+ 
     if fatal:
         summary["conclusion"] = f"ngspice error: {fatal.group(0).strip()}"
         return summary
     if summary["failed_measures"]:
         summary["conclusion"] = "measurement failed"
         return summary
-
+ 
     # Build a per-measurement table: every measured value, annotated with its
     # band + verdict when a checks sidecar covers it. Built unconditionally so
     # the report can render a table whether the cell passes or fails, and so
@@ -188,16 +233,16 @@ def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, An
                 {"name": name, "value": None,
                  "min": band.get("min"), "max": band.get("max"), "verdict": "MISSING"}
             )
-
+ 
     if summary["check_violations"]:
         summary["conclusion"] = "out-of-spec measurement"
         return summary
-
+ 
     summary["is_pass"] = True
     summary["conclusion"] = "sim passed"
     return summary
-
-
+ 
+ 
 def _fmt_eng(x: Optional[float]) -> str:
     """Compact engineering formatting for report tables (10.0u, 1.8m, -4.43e-13)."""
     if x is None:
@@ -210,8 +255,8 @@ def _fmt_eng(x: Optional[float]) -> str:
         if ax >= scale:
             return f"{x / scale:.4g}{suffix}"
     return f"{x:.4g}"  # sub-pico: leave in scientific form
-
-
+ 
+ 
 def _table_rows(rows: List[dict]) -> List[List[str]]:
     """Normalise measurement rows to string cells for the tables below."""
     def band(r: dict) -> str:
@@ -220,8 +265,8 @@ def _table_rows(rows: List[dict]) -> List[List[str]]:
             return "—"
         return f"{_fmt_eng(lo)} … {_fmt_eng(hi)}"
     return [[r["name"], _fmt_eng(r["value"]), band(r), r["verdict"]] for r in rows]
-
-
+ 
+ 
 def _ascii_table(rows: List[dict]) -> str:
     """Fixed-width table for the console log / JUnit system-out."""
     if not rows:
@@ -232,8 +277,8 @@ def _ascii_table(rows: List[dict]) -> str:
     line = lambda cells: "  " + " | ".join(c.ljust(widths[i]) for i, c in enumerate(cells))
     sep = "  " + "-+-".join("-" * w for w in widths)
     return "\n".join([line(header), sep, *(line(r) for r in data)])
-
-
+ 
+ 
 def _markdown_table(rows: List[dict]) -> str:
     """GitHub-flavoured Markdown table for the Actions step summary."""
     if not rows:
@@ -244,11 +289,11 @@ def _markdown_table(rows: List[dict]) -> str:
                  "MISSING": "⚠️ MISSING", "n/a": "—"}.get(verdict, verdict)
         out.append(f"| `{name}` | {value} | {limits} | {badge} |")
     return "\n".join(out)
-
-
+ 
+ 
 def _write_step_summary(results: List[dict], pdk: str, counts: Dict[str, int]) -> None:
     """Append a per-cell measurement table to $GITHUB_STEP_SUMMARY.
-
+ 
     No-op when the env var is unset (i.e. running locally), so this stays
     invisible outside CI. In CI it renders as real tables on the run's Summary
     page, alongside the JUnit check the publish step already posts.
@@ -277,8 +322,8 @@ def _write_step_summary(results: List[dict], pdk: str, counts: Dict[str, int]) -
             fh.write("\n".join(lines) + "\n")
     except OSError:
         pass
-
-
+ 
+ 
 def _write_junit(results: List[dict], pdk: str, out: Path) -> None:
     suite = ET.Element(
         "testsuite",
@@ -307,11 +352,11 @@ def _write_junit(results: List[dict], pdk: str, out: Path) -> None:
         if rows:
             ET.SubElement(case, "system-out").text = "\n" + _ascii_table(rows) + "\n"
     ET.ElementTree(suite).write(out, encoding="utf-8", xml_declaration=True)
-
-
+ 
+ 
 def _enumerate_cells(inputs_dir: Path, tb_dir: Path) -> Tuple[List[str], int]:
     """Cells that have BOTH a reference netlist and a testbench.
-
+ 
     Returns (simulatable_cells, total_netlists) so main() can tell the
     difference between "broken artifact" (no netlists at all) and "nothing
     wired up yet" (netlists exist but no testbenches).
@@ -319,12 +364,16 @@ def _enumerate_cells(inputs_dir: Path, tb_dir: Path) -> Tuple[List[str], int]:
     nets = {p.stem for p in (inputs_dir / "netlists").glob("*.spice")} if (inputs_dir / "netlists").is_dir() else set()
     tbs = {p.stem for p in tb_dir.glob("*.spice")} if tb_dir.is_dir() else set()
     return sorted(nets & tbs), len(nets)
-
-
+ 
+ 
 def _assemble_deck(name: str, netlist_path: Path, testbench_path: Path,
-                   model_lib: Path, corner: str, deck_path: Path) -> None:
-    """Write a self-contained ngspice deck: model lib + DUT netlist + testbench.
-
+                   model_lines: List[str], corner: str, deck_path: Path) -> None:
+    """Write a self-contained ngspice deck: model setup + DUT netlist + testbench.
+ 
+    ``model_lines`` is the per-PDK model preamble from ``_model_deck_lines()``:
+    a single ``.lib <file> <corner>`` for sky130, or the design.ngspice
+    include plus the sm141064.ngspice section set for gf180.
+ 
     POST-LAYOUT (PEX) EXTENSION: to simulate parasitics instead of the
     reference netlist, extract a `<cell>.pex.spice` from gds/<cell>.gds via a
     magic batch step (extract all; ext2spice cthresh 0; extresist all;
@@ -337,14 +386,14 @@ def _assemble_deck(name: str, netlist_path: Path, testbench_path: Path,
     body = re.sub(r"^\s*\.end\s*$", "", body, flags=re.M | re.I).rstrip()
     deck = (
         f"* auto-assembled deck for {name} ({corner})\n"
-        f'.lib "{model_lib}" {corner}\n'
-        f'.include "{netlist_path}"\n'
-        f"{body}\n"
-        f".end\n"
+        + "\n".join(model_lines) + "\n"
+        + f'.include "{netlist_path}"\n'
+        + f"{body}\n"
+        + ".end\n"
     )
     deck_path.write_text(deck)
-
-
+ 
+ 
 def _run_one_sim(item: dict) -> dict:
     """Simulate one cell. Designed for ProcessPoolExecutor."""
     name = item["name"]
@@ -355,7 +404,7 @@ def _run_one_sim(item: dict) -> dict:
     deck_path = cell_dir / f"{name}.deck.spice"
     log_path = cell_dir / f"{name}.log"
     result: Dict[str, Any] = {"cell": name, "pdk": pdk_name, "status": "skip"}
-
+ 
     try:
         print(f"[SIM]  {name}", flush=True)
         # Pass bands come from the single consolidated checks file, loaded once
@@ -366,16 +415,16 @@ def _run_one_sim(item: dict) -> dict:
             sidecar = Path(item["testbench_path"]).with_suffix(".checks.json")
             if sidecar.exists():
                 checks = json.loads(sidecar.read_text())
-
+ 
         _assemble_deck(
             name,
             Path(item["netlist_path"]),
             Path(item["testbench_path"]),
-            Path(item["model_lib"]),
+            item["model_lines"],
             item["corner"],
             deck_path,
         )
-
+ 
         # Batch mode with NO `.control` block: avoids the well-known
         # double-execution when `-b` is combined with `.control ... run`.
         proc = subprocess.run(
@@ -392,7 +441,7 @@ def _run_one_sim(item: dict) -> dict:
         result.update({"status": "error", "message": f"sim failed: {exc}", "trace": traceback.format_exc()})
         print(f"[ERROR] {name}: {exc}", flush=True)
         return result
-
+ 
     parsed = _parse_sim_log(log_text, checks)
     result.update({
         "summary": parsed,
@@ -414,8 +463,8 @@ def _run_one_sim(item: dict) -> dict:
     if rows:
         print(_ascii_table(rows), flush=True)
     return result
-
-
+ 
+ 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdk", required=True, choices=["sky130", "gf180"])
@@ -425,17 +474,30 @@ def main() -> int:
     )
     parser.add_argument("--out-dir", default="sim_results")
     parser.add_argument(
-        "--testbench-dir", default=str(REPO_ROOT / "tests" / "sim" / "testbenches"),
-        help="Directory of <cell>.spice testbenches (and optional <cell>.checks.json).",
+        "--testbench-dir", default=None,
+        help="Directory of <cell>.spice testbenches (and optional checks.json / "
+             "<cell>.checks.json). Default: tests/sim/testbenches/<pdk>, falling "
+             "back to the flat tests/sim/testbenches/ if the per-PDK directory "
+             "is absent.",
     )
-    parser.add_argument("--model-lib", default=None, help="Override ngspice model library path.")
+    parser.add_argument(
+        "--model-lib", default=None,
+        help="Override model location: for sky130 the .lib file itself; for "
+             "gf180 the ngspice models directory holding design.ngspice and "
+             "sm141064.ngspice.",
+    )
     parser.add_argument(
         "--checks-file", default=None,
         help="Single JSON file of pass bands keyed by cell name "
              "(default: <testbench-dir>/checks.json). A per-cell "
              "<cell>.checks.json sidecar is used as a fallback for any cell "
              "not listed in this file.")
-    parser.add_argument("--corner", default=None, help="Override corner section (default: sky130=tt, gf180=typical).")
+    parser.add_argument(
+        "--corner", default=None,
+        help="Override corner section (default: sky130=tt, gf180=typical). For "
+             "gf180 this swaps only the sm141064 MOS section; passive sections "
+             "stay at their typical variants.",
+    )
     parser.add_argument(
         "--cells", default=None,
         help="Comma-separated cell names; default runs every cell with both netlist+testbench.",
@@ -450,14 +512,23 @@ def main() -> int:
         help="Worker processes for parallel sims (default: cpu_count-1).",
     )
     args = parser.parse_args()
-
+ 
     inputs_dir = Path(args.inputs_dir).resolve()
-    tb_dir = Path(args.testbench_dir).resolve()
+    if args.testbench_dir:
+        tb_dir = Path(args.testbench_dir).resolve()
+    else:
+        # Per-PDK layout first (rails/probe points/bands differ per PDK),
+        # flat legacy layout as fallback.
+        tb_dir = REPO_ROOT / "tests" / "sim" / "testbenches" / args.pdk
+        if not tb_dir.is_dir():
+            tb_dir = REPO_ROOT / "tests" / "sim" / "testbenches"
+        tb_dir = tb_dir.resolve()
     out_dir = Path(args.out_dir).resolve()
     rpt_dir = out_dir / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     rpt_dir.mkdir(parents=True, exist_ok=True)
-
+    print(f"testbench dir: {tb_dir}")
+ 
     cells, total_nets = _enumerate_cells(inputs_dir, tb_dir)
     if total_nets == 0:
         print(f"no netlists found under {inputs_dir}/netlists (broken DRC artifact?)", file=sys.stderr)
@@ -472,10 +543,13 @@ def main() -> int:
         (out_dir / "summary.json").write_text(json.dumps(
             {"pdk": args.pdk, "total": 0, "note": msg}, indent=2))
         return 0
-
-    model_lib, corner = _model_lib(args.pdk, args.model_lib, args.corner)
-    print(f"model lib: {model_lib} (corner {corner})")
-
+ 
+    model_lines, corner, model_path = _model_deck_lines(args.pdk, args.model_lib, args.corner)
+    if not model_path.exists():
+        print(f"warning: model library not found at {model_path} "
+              f"(PDK_ROOT={os.environ.get('PDK_ROOT', '/foss/pdks')})", file=sys.stderr)
+    print(f"model setup (corner {corner}):\n  " + "\n  ".join(model_lines))
+ 
     # Load the single consolidated checks file once: { "<cell>": {band...} }.
     checks_file = Path(args.checks_file) if args.checks_file else (tb_dir / "checks.json")
     all_checks: Dict[str, dict] = {}
@@ -488,7 +562,7 @@ def main() -> int:
     else:
         print(f"no consolidated checks file at {checks_file} "
               f"(cells run as smoke tests unless a sidecar exists)")
-
+ 
     if args.cells:
         wanted = {c.strip() for c in args.cells.split(",") if c.strip()}
         missing = wanted - set(cells)
@@ -500,7 +574,7 @@ def main() -> int:
         for s in [c for c in cells if c in skip]:
             print(f"skipping cell on the --skip-cells list: {s}")
         cells = [c for c in cells if c not in skip]
-
+ 
     work_items = [
         {
             "name": name,
@@ -508,7 +582,7 @@ def main() -> int:
             "netlist_path": str(inputs_dir / "netlists" / f"{name}.spice"),
             "testbench_path": str(tb_dir / f"{name}.spice"),
             "checks": all_checks.get(name),
-            "model_lib": str(model_lib),
+            "model_lines": model_lines,
             "corner": corner,
             "out_dir": str(out_dir),
             "rpt_dir": str(rpt_dir),
@@ -530,7 +604,7 @@ def main() -> int:
                 results.append(fut.result())
     name_order = {n: i for i, n in enumerate(cells)}
     results.sort(key=lambda r: name_order.get(r["cell"], len(name_order)))
-
+ 
     summary = {
         "pdk": args.pdk,
         "total": len(results),
@@ -545,7 +619,7 @@ def main() -> int:
     _write_step_summary(results, args.pdk, summary)
     print(json.dumps({k: v for k, v in summary.items() if k != "results"}, indent=2))
     return 0 if summary["fail"] == 0 and summary["error"] == 0 else 1
-
-
+ 
+ 
 if __name__ == "__main__":
     sys.exit(main())
