@@ -1,32 +1,83 @@
 {
   "current_mirror_nfet": {
-    "iout_op":    {},
-    "mirror_err": {}
+    "iout_op": {
+      "min": 1.49e-05,
+      "max": 1.83e-05
+    },
+    "mirror_err": {
+      "min": 0.591,
+      "max": 0.723
+    }
   },
   "current_mirror_pfet": {
-    "iout_op":    {},
-    "mirror_err": {}
+    "iout_op": {
+      "min": 1.07e-05,
+      "max": 1.32e-05
+    },
+    "mirror_err": {
+      "min": 0.172,
+      "max": 0.211
+    }
   },
   "diff_pair": {
-    "i1_bal":    {},
-    "i2_bal":    {},
-    "itail_rec": {},
-    "imbalance": {}
+    "i1_bal": {
+      "min": 9.01e-06,
+      "max": 1.11e-05
+    },
+    "i2_bal": {
+      "min": 9.01e-06,
+      "max": 1.11e-05
+    },
+    "itail_rec": {
+      "min": 1.8e-05,
+      "max": 2.21e-05
+    },
+    "imbalance": {
+      "min": -0.01,
+      "max": 0.01
+    }
   },
   "diff_pair_ibias": {
-    "i1_bal":    {},
-    "i2_bal":    {},
-    "itail_rec": {},
-    "imbalance": {}
+    "i1_bal": {
+      "min": 8.97e-06,
+      "max": 1.1e-05
+    },
+    "i2_bal": {
+      "min": 8.97e-06,
+      "max": 1.1e-05
+    },
+    "itail_rec": {
+      "min": 1.79e-05,
+      "max": 2.2e-05
+    },
+    "imbalance": {
+      "min": -0.01,
+      "max": 0.01
+    }
   },
   "flipped_voltage_follower": {
-    "follow_slope": {},
-    "level_shift":  {}
+    "follow_slope": {
+      "min": 0.685,
+      "max": 0.838
+    },
+    "level_shift": {
+      "min": 0.787,
+      "max": 0.963
+    }
   },
   "transmission_gate": {
-    "ron_lo":  {},
-    "ron_mid": {},
-    "ron_hi":  {}
+    "ron_lo": {
+      "min": 1620,
+      "max": 1990
+    },
+    "ron_mid": {
+      "min": 2560,
+      "max": 3140
+    },
+    "ron_hi": {
+      "min": 5170,
+      "max": 6320
+    }
   },
   "low_voltage_cmirror": {
     "err1": {},

@@ -225,6 +225,14 @@ def _parse_sim_log(text: str, checks: Optional[Dict[str, dict]]) -> Dict[str, An
             summary["failed_measures"].append(m.group(1))
  
     if fatal:
+        # Attach the log lines around the error so summary.json shows the
+        # actual message (raw_tail often only catches the ngspice banner,
+        # which is printed after the error).
+        lines = text.splitlines()
+        for i, ln in enumerate(lines):
+            if fatal.group(0) in ln:
+                summary["error_context"] = "\n".join(lines[max(0, i - 6): i + 7])
+                break
         summary["conclusion"] = f"ngspice error: {fatal.group(0).strip()}"
         return summary
     if summary["failed_measures"]:
