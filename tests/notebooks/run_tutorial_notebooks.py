@@ -139,6 +139,11 @@ def _run_one(
         "jupyter", "nbconvert", "--to", "notebook", "--execute",
         f"--ExecutePreprocessor.timeout={timeout_per_cell}",
         "--ExecutePreprocessor.allow_errors=True",
+        # On a per-cell timeout, interrupt the kernel and carry on so the
+        # executed .ipynb is still written and _scan_executed can point at the
+        # exact cell. nbconvert's default (False) kills the kernel and writes
+        # nothing, which surfaces as an opaque "NbconvertCrash".
+        "--ExecutePreprocessor.interrupt_on_timeout=True",
         f"--ExecutePreprocessor.kernel_name={kernel_name}",
         "--output", str(executed),
         nb.name,
@@ -248,12 +253,13 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--out-dir", default="notebook_results")
     p.add_argument(
-        "--cell-timeout", type=int, default=180,
-        help="Per-cell timeout passed to nbconvert (default: 180s).",
+        "--cell-timeout", type=int, default=600,
+        help="Per-cell timeout passed to nbconvert (default: 600s; the magic "
+             "PEX / netgen LVS cells are the long pole).",
     )
     p.add_argument(
-        "--notebook-timeout", type=int, default=900,
-        help="Hard wall-clock cap per notebook (default: 900s).",
+        "--notebook-timeout", type=int, default=1500,
+        help="Hard wall-clock cap per notebook (default: 1500s).",
     )
     p.add_argument(
         "--kernel-name", default="python3",
