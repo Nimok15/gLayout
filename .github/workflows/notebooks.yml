@@ -56,11 +56,14 @@ jobs:
         # Both sky130A and gf180mcuD live here; glayout's gf180 module reads
         # this at import time even when a notebook only touches sky130, so
         # it has to be set globally.
-        # The tutorials build several times faster on the native backend,
-        # which takes the heaviest notebooks off the 180s per-cell limit
-        # rather than raising it. Measured on the fork's own CI:
-        # GLayout_Cells 187.8s (timeout) -> 14.2s, whole suite 660s -> 158s.
-        GLAYOUT_BACKEND: gdstk
+        # NOTE: do NOT set GLAYOUT_BACKEND=gdstk here. Eleven of the tutorials
+        # import Component / rectangle / cell straight from gdsfactory (that is
+        # the API they teach), so a gdstk-backed nmos() handed to a gdsfactory
+        # top-level Component fails add_ref's isinstance check with
+        # "TypeError: ... needs to be a Component". The gdstk speed-up was only
+        # needed to fit the old 180 s per-cell limit; with 600 s per cell and
+        # one job per notebook the default gdsfactory backend fits comfortably.
+        GLAYOUT_BACKEND: gdsfactory
         # Tells the PEX cells in the FVF/INV/BJT tutorials to skip magic's
         # `extresist` pass (full RC extraction), which runs for minutes on a
         # flattened design. Devices + caps are still extracted.
