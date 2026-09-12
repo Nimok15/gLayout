@@ -60,7 +60,7 @@ jobs:
         # which takes the heaviest notebooks off the 180s per-cell limit
         # rather than raising it. Measured on the fork's own CI:
         # GLayout_Cells 187.8s (timeout) -> 14.2s, whole suite 660s -> 158s.
-        GLAYOUT_BACKEND: gdstk
+        GLAYOUT_BACKEND: gdsfactory
         # Tells the PEX cells in the FVF/INV/BJT tutorials to skip magic's
         # `extresist` pass (full RC extraction), which runs for minutes on a
         # flattened design. Devices + caps are still extracted.
