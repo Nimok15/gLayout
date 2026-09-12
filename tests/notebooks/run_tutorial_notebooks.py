@@ -258,8 +258,9 @@ def main() -> int:
              "PEX / netgen LVS cells are the long pole).",
     )
     p.add_argument(
-        "--notebook-timeout", type=int, default=1500,
-        help="Hard wall-clock cap per notebook (default: 1500s).",
+        "--notebook-timeout", type=int, default=1200,
+         help="Hard wall-clock cap per notebook (default: 1200s). Keep this well "
+              "under the CI job timeout so junit.xml is always written.",
     )
     p.add_argument(
         "--kernel-name", default="python3",
