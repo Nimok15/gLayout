@@ -56,22 +56,57 @@ pip install -e ".[ml]"
 pip install -e ".[llm]"
 ```
 
-## Quick Start
+## Quick start
+
+### Build a single part
 
 ```python
-from glayout import sky130, gf180, nmos ,pmos,via_stack
+from glayout import sky130, gf180, nmos, via_stack
 
-# Generate a via stack
-#met2 is the bottom layer. met3 is the top layer.
-via = via_stack(sky130, "met2", "met3", centered=True) 
-
-# Generate a transistor
-transistor = nmos(sky130, width=1.0, length=0.15, fingers=2)
-
-# Write to GDS
+# A via stack from metal 2 up to metal 3
+via = via_stack(sky130, "met2", "met3", centered=True)
 via.write_gds("via.gds")
-transistor.write_gds("transistor.gds")
+
+# An NMOS transistor with 2 fingers: 1 µm wide, 0.15 µm long
+fet = nmos(sky130, width=1.0, length=0.15, fingers=2)
+fet.write_gds("nmos.gds")
+
+# The same transistor on a different process
+fet_gf = nmos(gf180, width=1.0, fingers=2)
 ```
+
+- The first argument is always the process (`sky130` or `gf180`).
+- If `length` is left out, the smallest length the process allows is used.
+
+### Place and connect parts
+
+```python
+from glayout import gf180, nmos, c_route, movex, evaluate_bbox
+from glayout.backend import Component
+
+pdk = gf180
+top = Component("mirror_sketch")
+
+# Add two transistors
+ref = top << nmos(pdk, width=3, fingers=2)
+out = top << nmos(pdk, width=3, fingers=2)
+
+# Move the second one to the right, at a safe distance
+movex(out, evaluate_bbox(ref)[0] + pdk.util_max_metal_seperation())
+
+# Connect the two gates with a wire
+top << c_route(pdk, ref.ports["multiplier_0_gate_E"], out.ports["multiplier_0_gate_E"])
+
+top.write_gds("mirror_sketch.gds")
+```
+
+### Check the layout
+
+```python
+pdk.drc(top, "drc_out/")   # Returns True if the layout passes all rules
+```
+
+- This needs KLayout and the PDK installed.
 
 ## Documentation
 
@@ -84,11 +119,23 @@ For detailed documentation, please visit our [documentation site](https://glayou
 - Technology-independent design rules
 - Support for multiple PDKs (sky130, gf180)
 
-### Circuit Generators
-- Via stack generation
-- Transistor generation (NMOS/PMOS)
-- Guard ring generation
-- And more...
+### Basic parts
+- **Transistors:** `nmos`, `pmos`, and the lower-level `multiplier`
+- **Vias:** `via_stack`, `via_array`
+- **Guard rings:** `tapring`
+- **Capacitors:** `mimcap`, `mimcap_array`
+- **Resistors:** `resistor`
+
+### Routing tools
+- **`straight_route`**: a direct straight wire
+- **`L_route`**: a wire with one bend
+- **`c_route`**: a wire that goes out, across and back, shaped like a C
+- **`smart_route`**: picks the right route shape automatically
+
+### Checking tools
+- **DRC (Design Rule Check):** confirms the layout follows the factory's rules. Run with `pdk.drc()` (KLayout) or `pdk.drc_magic()` (Magic).
+- **LVS (Layout vs. Schematic):** confirms the layout matches the intended circuit. Run with `pdk.lvs_netgen()` (Netgen).
+- **Parasitic extraction:** estimates the unwanted resistance and capacitance of the wiring, using Magic.
 
 ### Natural Language Processing/Large Language Model Framework
 - Convert natural language descriptions to layouts
@@ -98,6 +145,19 @@ For detailed documentation, please visit our [documentation site](https://glayou
 ### Supported Open Source PDKs
 - SkyWater [SKY-130A](https://skywater-pdk.readthedocs.io/en/main/)
 - GlobalFoundries [GF-180mcuD](https://gf180mcu-pdk.readthedocs.io/en/latest/)
+
+## Two backends
+
+A backend is the library that draws the actual shapes. gLayout supports two:
+
+- **gdsfactory** (default): the original backend.
+- **gdstk**: newer, and roughly 10–25× faster in the test suite's timing runs. It is planned to become the default.
+
+Switch between them with one setting:
+
+```bash
+export GLAYOUT_BACKEND=gdstk        # or gdsfactory
+```
 
 ## Contributing
 
