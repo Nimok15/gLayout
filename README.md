@@ -4,14 +4,29 @@ A PDK-agnostic layout automation framework for analog circuit design.
 
 ## Overview
 
-Glayout is a powerful layout automation tool that generates DRC-clean circuit layouts for any technology implementing the Glayout framework. It is implemented as an easy-to-install Python package with all dependencies available on PyPI.
+gLayout is an open-source framework for analog layout generation using Python. By defining transistors, placement parameters, and routing connections programmatically, gLayout compiles cell designs directly into DRC clean GDS files for target PDKs. Since no manufacturing rules are hard-coded, gLayout dynamically retrieves design rules from the active PDK at build time. This architecture allows a single generator to produce physical layouts for multiple PDKs—such as Sky130 and GF180. 
 
-Key features:
-- PDK-agnostic layout generation
-- Support for multiple technology nodes (sky130, gf180)
-- DRC-clean layout generation
-- Natural language processing for circuit design
-- Integration with Klayout for visualization and verification
+## How it works
+
+Most analog layout is still drawn by hand, and much of that work is repetitive. gLayout splits the job into two layers.
+
+### 1. PDK layer (the translator)
+
+- **Universal naming:** Layers get simple names like `met2` or `poly` instead of each factory's own layer numbers.
+- **Smart rulebook:** Every spacing and manufacturing rule for each factory is stored in one place, so the layout tool looks rules up instead of using fixed numbers.
+
+### 2. Generator layer (the building blocks)
+
+- **Basic parts:** Transistors, vias (connections between metal layers) and guard rings are built automatically from code.
+- **Complex circuits:** Basic parts snap together into bigger blocks like differential pairs and op-amps.
+- **Portable designs:** With no factory numbers or fixed measurements in the code, the same design works on every supported process.
+
+### Why this matters
+
+- **Write once:** A cell is written once and reused across processes.
+- **Easy resizing:** Changing a size takes one parameter, not a redraw.
+- **Automatic checking:** Every layout can be checked for errors automatically.
+- **AI-ready:** Because cells are plain code, software and AI models can generate or tune them.
 
 ## Installation
 
