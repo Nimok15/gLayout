@@ -4,7 +4,7 @@ A PDK-agnostic layout automation framework for analog circuit design.
 
 ## Overview
 
-gLayout is an open-source framework for analog layout generation using Python. By defining transistors, placement parameters, and routing connections programmatically, gLayout compiles cell designs directly into DRC clean GDS files for target PDKs. Since no manufacturing rules are hard-coded, gLayout dynamically retrieves design rules from the active PDK at build time. This architecture allows a single generator to produce physical layouts for multiple PDKs—such as Sky130 and GF180. 
+gLayout is an open-source Python framework for generating analog layouts. Transistors, placement and routing are defined in code, and gLayout turns each cell into a GDS file built to be DRC-clean for the target PDK. No design rules are hard-coded; gLayout reads them from the active PDK at build time. As a result, a single generator produces layouts for every supported PDK, currently SkyWater 130 (sky130) and GlobalFoundries 180 (gf180). 
 
 ## How it works
 
