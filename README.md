@@ -28,7 +28,26 @@ Most analog layout is still drawn by hand, and much of that work is repetitive. 
 - **Automatic checking:** Every layout can be checked for errors automatically.
 - **AI-ready:** Because cells are plain code, software and AI models can generate or tune them.
 
+## Requirements
+
+| What | Needed for | Notes |
+|---|---|---|
+| **Python 3.10 or 3.11** | Everything | Python 3.12+ does not currently work: the pinned `numpy<=1.24` fails to build there. |
+| **`PDK_ROOT` environment variable** | Importing `sky130` and `gf180` | Must be set *before* `import glayout`, even if you only generate GDS. See [Troubleshooting](#troubleshooting). |
+| **KLayout** | Viewing GDS files, `pdk.drc()` | Installed automatically as a Python package; the desktop app is handy for viewing. |
+| **PDK files** (sky130A / gf180mcuD) | DRC, LVS, PEX | Not needed just to generate GDS. |
+| **Magic, Netgen, ngspice** | `drc_magic()`, LVS, PEX, simulation | Optional; only for the verification flow. |
+
+**Easiest route:** the [IIC-OSIC-TOOLS Docker image](docs/IIC-OSIC-TOOLS/README.md) ships every EDA tool and both PDKs (sky130A and gf180mcuD) pre-installed. See [docs/gLayout_Install.md](docs/gLayout_Install.md) and [tutorial/HOW_TO_RUN.md](tutorial/HOW_TO_RUN.md) for step-by-step setup.
+
 ## Installation
+
+We recommend a virtual environment so gLayout's pinned dependencies (gdsfactory 7.x, numpy 1.x) don't clash with other projects:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
 
 ### Basic Installation
 
@@ -54,6 +73,19 @@ pip install -e ".[ml]"
 
 ```bash
 pip install -e ".[llm]"
+```
+
+### Set up the environment
+
+```bash
+export PDK_ROOT=/path/to/your/pdks   
+export PDK=sky130A/gf180mcuD             
+```
+
+### Check that it worked
+
+```bash
+python -c "from glayout import sky130, gf180; print('sky130:', sky130 is not None, '| gf180:', gf180 is not None)"
 ```
 
 ## Quick start
@@ -108,9 +140,20 @@ pdk.drc(top, "drc_out/")   # Returns True if the layout passes all rules
 
 - This needs KLayout and the PDK installed.
 
-## Documentation
+## Tutorials
 
-For detailed documentation, please visit our [documentation site](https://glayout.readthedocs.io/).
+Jupyter notebooks in [`tutorial/`](tutorial/README.md). Suggested order for newcomers:
+
+| # | Notebook | PDK | You'll learn |
+|---|---|---|---|
+| 1 | [Introduction to gLayout](tutorial/GLayout_Introduction.ipynb) | sky130 + gf180 | Core concepts and workflow |
+| 2 | [Via placement](tutorial/GLayout_Via.ipynb) | sky130 + gf180 | Vias and metal layers |
+| 3 | [Current mirror](tutorial/GLayout_Cmirror.ipynb) | sky130 + gf180 | Placing and routing a real cell |
+| 4 | [FVF part 1](tutorial/glayout_tutorial_FVF_part1.ipynb) → [part 2](tutorial/glayout_tutorial_FVF_part2.ipynb) | gf180 | Placement, routing, DRC, then LVS, PEX and simulation |
+| 5 | [Inverter part 1](tutorial/glayout_tutorial_INV_part1.ipynb) | gf180 | A second end-to-end example |
+| 6 | [Available cells](tutorial/GLayout_Cells.ipynb) · [Op-amp](tutorial/glayout_opamp.ipynb) | gf180 · sky130 | The built-in cell library and a full op-amp |
+
+[tutorial/HOW_TO_RUN.md](tutorial/HOW_TO_RUN.md) lists which tools and PDK each notebook needs.
 
 ## Features
 
@@ -125,6 +168,10 @@ For detailed documentation, please visit our [documentation site](https://glayou
 - **Guard rings:** `tapring`
 - **Capacitors:** `mimcap`, `mimcap_array`
 - **Resistors:** `resistor`
+
+### Ready-made cells (`glayout.cells`)
+- **Elementary:** `current_mirror`, `diff_pair`, `flipped_voltage_follower`, `transmission_gate`
+- **Composite:** `opamp`, `diff_pair_ibias`, `low_voltage_cmirror`, `stacked_nfet_current_mirror`, `differential_to_single_ended_converter`
 
 ### Routing tools
 - **`straight_route`**: a direct straight wire
@@ -156,8 +203,12 @@ A backend is the library that draws the actual shapes. gLayout supports two:
 Switch between them with one setting:
 
 ```bash
-export GLAYOUT_BACKEND=gdstk        # or gdsfactory
+export GLAYOUT_BACKEND=gdstk/gdsfactory
 ```
+
+## Documentation
+
+For detailed documentation, please visit our [documentation site](https://glayout.readthedocs.io/).
 
 ## Contributing
 
