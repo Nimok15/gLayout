@@ -1,10 +1,10 @@
-# gLayout
+# Glayout
 
 A PDK-agnostic layout automation framework for analog circuit design.
 
 ## Overview
 
-gLayout is an open-source Python framework for generating analog layouts. Transistors, placement and routing are defined in code, and gLayout turns each cell into a GDS file built to be DRC-clean for the target PDK. No design rules are hard-coded; gLayout reads them from the active PDK at build time. As a result, a single generator produces layouts for every supported PDK, currently SkyWater 130 (sky130) and GlobalFoundries 180 (gf180).
+gLayout is an open-source Python framework for generating analog layouts. Transistors, placement and routing are defined in code, and gLayout turns each cell into a GDS file built to be DRC-clean for the target PDK. No design rules are hard-coded; gLayout reads them from the active PDK at build time. As a result, a single generator produces layouts for every supported PDK, currently SkyWater 130 (sky130) and GlobalFoundries 180 (gf180). 
 
 ## How it works
 
@@ -52,14 +52,14 @@ source .venv/bin/activate
 ### Basic Installation
 
 ```bash
-pip install glayout
+pip install .
 ```
 
 ### Development Installation
 
 ```bash
-git clone https://github.com/ReaLLMASIC/gLayout.git
-cd gLayout
+git clone https://github.com/your-username/glayout.git
+cd glayout
 pip install -e ".[dev]"
 ```
 
@@ -78,8 +78,8 @@ pip install -e ".[llm]"
 ### Set up the environment
 
 ```bash
-export PDK_ROOT=/path/to/your/pdks   # folder containing sky130A/ and gf180mcuD/
-export PDK=sky130A                   # or gf180mcuD
+export PDK_ROOT=/path/to/your/pdks   
+export PDK=sky130A                       # or gf180mcuD             
 ```
 
 ### Check that it worked
@@ -87,8 +87,6 @@ export PDK=sky130A                   # or gf180mcuD
 ```bash
 python -c "from glayout import sky130, gf180; print('sky130:', sky130 is not None, '| gf180:', gf180 is not None)"
 ```
-
-Both should print `True`. If either prints `False`, `PDK_ROOT` isn't set.
 
 ## Quick start
 
@@ -205,19 +203,8 @@ A backend is the library that draws the actual shapes. gLayout supports two:
 Switch between them with one setting:
 
 ```bash
-export GLAYOUT_BACKEND=gdstk        # or gdsfactory
+export GLAYOUT_BACKEND=gdstk    # or gdsfactory
 ```
-
-## Troubleshooting
-
-**`AttributeError: 'NoneType' object has no attribute 'activate'`**
-The PDK object is `None` because `PDK_ROOT` was not set when `glayout` was imported (both `sky130` and `gf180` read it at import time). Export it and restart Python or the Jupyter kernel.
-
-**`ModuleNotFoundError: No module named 'distutils'` during install**
-You're on Python 3.12+. Create the environment with Python 3.10 or 3.11.
-
-**Version conflicts with gdsfactory or numpy (e.g. in IIC-OSIC-TOOLS)**
-Recent images ship gdsfactory 9.x and numpy 2.x; gLayout needs gdsfactory 7.x and numpy 1.x. Install gLayout in its own venv as described in [tutorial/HOW_TO_RUN.md](tutorial/HOW_TO_RUN.md).
 
 ## Documentation
 
@@ -233,33 +220,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Citation
 
-If you use gLayout in your research, please cite our papers:
+If you use Glayout in your research, please cite our papers:
 
 ```bibtex
-@inproceedings{hammoud2024human,
+@article{hammoud2024human,
   title={Human Language to Analog Layout Using Glayout Layout Automation Framework},
   author={Hammoud, A. and Goyal, C. and Pathen, S. and Dai, A. and Li, A. and Kielian, G. and Saligane, M.},
-  booktitle={2024 ACM/IEEE International Symposium on Machine Learning for CAD (MLCAD)},
-  year={2024},
-  doi={10.1145/3670474.3685971}
+  journal={Accepted at MLCAD},
+  year={2024}
 }
 
-@inproceedings{hammoud2024reinforcement,
+@article{hammoud2024reinforcement,
   title={Reinforcement Learning-Enhanced Cloud-Based Open Source Analog Circuit Generator for Standard and Cryogenic Temperatures in 130-nm and 180-nm OpenPDKs},
   author={Hammoud, A. and Li, A. and Tripathi, A. and Tian, W. and Khandeparkar, H. and Wans, R. and Kielian, G. and Murmann, B. and Sylvester, D. and Saligane, M.},
-  booktitle={2024 ACM/IEEE International Conference on Computer-Aided Design (ICCAD)},
-  pages={1--7},
-  year={2024},
-  doi={10.1145/3676536.3676823}
-}
-
-@inproceedings{saligane2026generative,
-  title={Toward Generative Silicon: The Next Frontier in Open-Source and AI-Driven Analog Design},
-  author={Saligane, M. and Li, A. and Ghosh, S. and Murmann, B.},
-  booktitle={2026 IEEE International Symposium on Circuits and Systems (ISCAS)},
-  pages={3749--3752},
-  year={2026},
-  doi={10.1109/ISCAS66217.2026.11562121}
+  journal={Accepted at ICCAD},
+  year={2024}
 }
 ```
 
@@ -267,3 +242,4 @@ If you use gLayout in your research, please cite our papers:
 
 For questions and support, please contact:
 - Email: mehdi_saligane@brown.edu
+ 
