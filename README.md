@@ -4,7 +4,7 @@ A PDK-agnostic layout automation framework for analog circuit design.
 
 ## Overview
 
-gLayout is an open-source Python framework for generating analog layouts. Transistors, placement and routing are defined in code, and gLayout turns each cell into a GDS file built to be DRC-clean for the target PDK. No design rules are hard-coded; gLayout reads them from the active PDK at build time. As a result, a single generator produces layouts for every supported PDK, currently SkyWater 130 (sky130) and GlobalFoundries 180 (gf180). 
+gLayout is an open-source Python framework for generating analog layouts. Transistors, placement and routing are defined in code, and gLayout turns each cell into a GDS file for the target PDK. Process-specific layer mappings, device definitions, and design-rule parameters are organized in the corresponding PDK modules, allowing the same layout generators to be used across supported technologies. Currently, gLayout supports SkyWater 130 (sky130) and GlobalFoundries 180 (gf180). 
 
 ## How it works
 
@@ -13,13 +13,13 @@ Most analog layout is still drawn by hand, and much of that work is repetitive. 
 ### 1. PDK layer (the translator)
 
 - **Universal naming:** Layers get simple names like `met2` or `poly` instead of each factory's own layer numbers.
-- **Smart rulebook:** Every spacing and manufacturing rule for each factory is stored in one place, so the layout tool looks rules up instead of using fixed numbers.
+- **Technology-specific rules:** Process-specific spacing, geometry, and manufacturing parameters are organized in the corresponding PDK modules.
 
 ### 2. Generator layer (the building blocks)
 
 - **Basic parts:** Transistors, vias (connections between metal layers) and guard rings are built automatically from code.
 - **Complex circuits:** Basic parts snap together into bigger blocks like differential pairs and op-amps.
-- **Portable designs:** With no factory numbers or fixed measurements in the code, the same design works on every supported process.
+- **Portable designs:**  Generators are written against the PDK abstraction, allowing the same generator code to target supported processes where the required primitives and rules are available.
 
 ### Why this matters
 
@@ -33,8 +33,8 @@ Most analog layout is still drawn by hand, and much of that work is repetitive. 
 | What | Needed for | Notes |
 |---|---|---|
 | **Python 3.10 or 3.11** | Everything | Python 3.12+ does not currently work: the pinned `numpy<=1.24` fails to build there. |
-| **`PDK_ROOT` environment variable** | Importing `sky130` and `gf180` | Must be set *before* `import glayout`, even if you only generate GDS. See [Troubleshooting](#troubleshooting). |
-| **KLayout** | Viewing GDS files, `pdk.drc()` | Installed automatically as a Python package; the desktop app is handy for viewing. |
+| **`PDK_ROOT` environment variable** | Importing `sky130` and `gf180` | Must be set *before* `import glayout`, even if you only generate GDS. |
+| **KLayout** | Viewing GDS files, `pdk.drc()` | The KLayout Python package is installed with gLayout, but the `klayout` command-line executable must be installed separately and available on `PATH`. |
 | **PDK files** (sky130A / gf180mcuD) | DRC, LVS, PEX | Not needed just to generate GDS. |
 | **Magic, Netgen, ngspice** | `drc_magic()`, LVS, PEX, simulation | Optional; only for the verification flow. |
 
@@ -85,7 +85,19 @@ export PDK=sky130A                       # or gf180mcuD
 ### Check that it worked
 
 ```bash
-python -c "from glayout import sky130, gf180; print('sky130:', sky130 is not None, '| gf180:', gf180 is not None)"
+python - <<'PY'
+import os
+
+pdk_root = os.environ.get("PDK_ROOT")
+
+if not pdk_root:
+    print("PDK_ROOT is not set")
+    raise SystemExit(1)
+
+for pdk in ("sky130A", "gf180mcuD"):
+    path = os.path.join(pdk_root, pdk)
+    print(f"{pdk}: {'available' if os.path.isdir(path) else 'missing'}")
+PY
 ```
 
 ## Quick start
@@ -134,8 +146,10 @@ top.write_gds("mirror_sketch.gds")
 
 ### Check the layout
 
+For the `gdsfactory` backend, KLayout DRC can be run with:
+
 ```python
-pdk.drc(top, "drc_out/")   # Returns True if the layout passes all rules
+pdk.drc(top, "drc_out/")   
 ```
 
 - This needs KLayout and the PDK installed.
@@ -159,7 +173,7 @@ Jupyter notebooks in [`tutorial/`](tutorial/README.md). Suggested order for newc
 
 ### PDK Agnostic Layout
 - Generic layer mapping
-- Technology-independent design rules
+- PDK-specific design-rule parameters
 - Support for multiple PDKs (sky130, gf180)
 
 ### Basic parts
@@ -197,8 +211,8 @@ Jupyter notebooks in [`tutorial/`](tutorial/README.md). Suggested order for newc
 
 A backend is the library that draws the actual shapes. gLayout supports two:
 
-- **gdsfactory** (default): the original backend.
-- **gdstk**: newer, and roughly 10–25× faster in the test suite's timing runs. It is planned to become the default.
+- **gdsfactory** (default): supports GDS generation and the current KLayout DRC workflow.
+- **gdstk**: newer backend with faster GDS generation, but the KLayout DRC integration is currently incomplete.
 
 Switch between them with one setting:
 
